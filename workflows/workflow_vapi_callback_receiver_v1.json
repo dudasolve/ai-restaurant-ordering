@@ -1,0 +1,105 @@
+{
+  "name": "vapi_callback_receiver_v1",
+  "nodes": [
+    {
+      "id": "webhook-callback-001",
+      "name": "Vapi Callback Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-160, -144],
+      "parameters": {
+        "multipleMethods": false,
+        "httpMethod": "POST",
+        "path": "vapi-callback-request",
+        "authentication": "none",
+        "responseMode": "lastNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "airtable-callbacks-node-001",
+      "name": "Log Callback to Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [64, -144],
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "appmBaUD39bNFM4QA",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblWNa0KZhD8FbomB",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Caller Name": "={{ $json.body?.callerName || $json.callerName || '' }}",
+            "Phone": "={{ $json.body?.call?.customer?.number || $json.callerPhone || '' }}",
+            "Notes / Reason": "={{ $json.body?.reason || $json.reason || '' }}",
+            "Timestamp": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "otkgs9oolwSO4bW3",
+          "name": "ZosGoodBurger Airtable"
+        }
+      }
+    },
+    {
+      "id": "sms-alert-node-001",
+      "name": "SMS Alert to Hassan",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [288, -144],
+      "parameters": {
+        "operation": "send",
+        "from": "+13136311176",
+        "to": "={{ $json.body?.call?.customer?.number || '' }}",
+        "message": "=🔔 CALLBACK REQUEST\n\nCustomer: {{ $json.body?.callerName || 'Unknown' }}\nPhone: {{ $json.body?.call?.customer?.number || 'N/A' }}\nReason: {{ $json.body?.reason || 'Requested human' }}\n\nCall them back ASAP!",
+        "options": {}
+      },
+      "notes": "⚠️ Add your Twilio credential here. Also update the 'to' field to Hassan's phone number."
+    },
+    {
+      "id": "respond-callback-001",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [512, -144],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'callback_logged' }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Vapi Callback Webhook": {
+      "main": [
+        [{ "node": "Log Callback to Airtable", "type": "main", "index": 0 }]
+      ]
+    },
+    "Log Callback to Airtable": {
+      "main": [
+        [{ "node": "SMS Alert to Hassan", "type": "main", "index": 0 }]
+      ]
+    },
+    "SMS Alert to Hassan": {
+      "main": [
+        [{ "node": "Respond OK", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
