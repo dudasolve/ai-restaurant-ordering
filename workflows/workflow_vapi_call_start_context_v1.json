@@ -1,0 +1,44 @@
+{
+  "name": "vapi_call_start_context",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "cc11aaaa-1111-4111-a111-cc11aaaa1111",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-200, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vapi-call-start",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "cc11aaaa-2222-4222-b222-cc11aaaa2222"
+    },
+    {
+      "id": "dd22bbbb-3333-4333-c333-dd22bbbb3333",
+      "name": "Handle Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [60, 0],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PAT = 'REDACTED__SET_AS_N8N_ENV_VAR_AIRTABLE_PAT';\nconst BASE_ID = 'appmBaUD39bNFM4QA';\nconst LOCATIONS_TABLE = 'tbltUIpyKYxotKJN4';\nconst ORDERS_TABLE = 'tblQkG1DeczNyWsyM';\nconst CACHE_TTL = 6 * 60 * 60 * 1000;\n\nconst body = $input.first().json.body || $input.first().json;\nconst msgType = body?.message?.type || '';\n\n// ── end-of-call-report: update record with recording URL + transcript ──\nif (msgType === 'end-of-call-report') {\n  const callId = body?.message?.call?.id || '';\n  const recordingUrl = body?.message?.artifact?.recordingUrl || '';\n  const transcript = body?.message?.artifact?.transcript || '';\n\n  if (callId) {\n    const formula = encodeURIComponent('{Call ID}=\"' + callId + '\"');\n    const searchRes = await this.helpers.httpRequest({\n      method: 'GET',\n      url: 'https://api.airtable.com/v0/' + BASE_ID + '/' + ORDERS_TABLE + '?filterByFormula=' + formula + '&maxRecords=1',\n      headers: { Authorization: 'Bearer ' + PAT }\n    });\n\n    if (searchRes.records && searchRes.records.length > 0) {\n      const recId = searchRes.records[0].id;\n      const fields = {};\n      if (recordingUrl) fields['fldgEdVyTu9OjeaFY'] = recordingUrl;\n      if (transcript)   fields['fldbApN3f2mBSi3Ea'] = transcript;\n      if (Object.keys(fields).length > 0) {\n        await this.helpers.httpRequest({\n          method: 'PATCH',\n          url: 'https://api.airtable.com/v0/' + BASE_ID + '/' + ORDERS_TABLE + '/' + recId,\n          headers: { Authorization: 'Bearer ' + PAT, 'Content-Type': 'application/json' },\n          body: JSON.stringify({ fields })\n        });\n      }\n    }\n  }\n  return [{ json: {} }];\n}\n\n// ── assistant-request / call start: inject locations into context ──\nconst cache = $getWorkflowStaticData('global');\nconst now = Date.now();\nconst hit = cache['all_active'];\nlet records;\n\nif (hit && (now - hit.ts) < CACHE_TTL) {\n  records = hit.data;\n} else {\n  const url = 'https://api.airtable.com/v0/' + BASE_ID + '/' + LOCATIONS_TABLE +\n    '?filterByFormula=' + encodeURIComponent('{Active}=TRUE()');\n  const res = await this.helpers.httpRequest({ method: 'GET', url, headers: { Authorization: 'Bearer ' + PAT } });\n  records = res.records || [];\n  cache['all_active'] = { data: records, ts: now };\n}\n\nconst byState = {};\nrecords.forEach(r => {\n  const f = r.fields;\n  const state = f['State'] || 'Other';\n  if (!byState[state]) byState[state] = [];\n  let line = (f['Location Name'] || '') + ': ' + (f['Address'] || '') + ', ' + (f['City'] || '');\n  if (f['Phone']) line += ' (' + f['Phone'] + ')';\n  byState[state].push(line);\n});\n\nconst locText = Object.keys(byState).sort()\n  .map(s => s + ':\\n' + byState[s].join('\\n')).join('\\n\\n');\n\nreturn [{ json: {\n  messageResponse: {\n    assistant: {\n      model: {\n        messages: [{ role: 'system', content: '## STORE LOCATIONS\\n\\n' + locText }]\n      }\n    }\n  }\n} }];"
+      }
+    },
+    {
+      "id": "ee33cccc-5555-4555-d555-ee33cccc5555",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [300, 0],
+      "parameters": { "respondWith": "firstIncomingItem", "options": {} }
+    }
+  ],
+  "connections": {
+    "Webhook":      { "main": [[{ "node": "Handle Event", "type": "main", "index": 0 }]] },
+    "Handle Event": { "main": [[{ "node": "Respond",      "type": "main", "index": 0 }]] }
+  }
+}

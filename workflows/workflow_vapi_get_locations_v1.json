@@ -1,0 +1,44 @@
+{
+  "name": "vapi_get_locations",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-200, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vapi-get-locations",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8b"
+    },
+    {
+      "id": "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b",
+      "name": "Lookup Locations",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [60, 0],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours — locations rarely change\nconst PAT = 'REDACTED__SET_AS_N8N_ENV_VAR_AIRTABLE_PAT';\nconst BASE_ID = 'appmBaUD39bNFM4QA';\nconst TABLE_ID = 'tbltUIpyKYxotKJN4';\n\nconst body = $input.first().json.body || $input.first().json;\nconst toolCallList = body?.message?.toolCallList || [];\nconst toolCall = toolCallList[0] || {};\nconst toolCallId = toolCall.id || 'unknown';\nlet args = toolCall.function?.arguments || {};\nif (typeof args === 'string') args = JSON.parse(args);\n\nlet cacheKey, formula;\nif (args.city) {\n  cacheKey = 'city_' + args.city.toLowerCase();\n  formula = 'AND({Active}=TRUE(),SEARCH(LOWER(\"' + args.city + '\"),LOWER({City})))';\n} else if (args.state) {\n  cacheKey = 'state_' + args.state.toUpperCase();\n  formula = 'AND({Active}=TRUE(),{State}=\"' + args.state.toUpperCase() + '\")';\n} else if (args.name) {\n  cacheKey = 'name_' + args.name.toLowerCase();\n  formula = 'AND({Active}=TRUE(),SEARCH(LOWER(\"' + args.name + '\"),LOWER({Location Name})))';\n} else {\n  cacheKey = 'all_active';\n  formula = '{Active}=TRUE()';\n}\n\nconst cache = $getWorkflowStaticData('global');\nconst now = Date.now();\nconst hit = cache[cacheKey];\nlet records;\n\nif (hit && (now - hit.ts) < CACHE_TTL) {\n  records = hit.data;\n} else {\n  const url = 'https://api.airtable.com/v0/' + BASE_ID + '/' + TABLE_ID +\n    '?filterByFormula=' + encodeURIComponent(formula);\n  const res = await this.helpers.httpRequest({ method: 'GET', url, headers: { Authorization: 'Bearer ' + PAT } });\n  records = res.records || [];\n  cache[cacheKey] = { data: records, ts: now };\n}\n\nif (records.length === 0) {\n  return [{ json: { results: [{ toolCallId, result: 'No locations found for that area.' }] } }];\n}\n\nconst lines = records.map(r => {\n  const f = r.fields;\n  let info = (f['Location Name'] || '') + ' — ' + (f['Address'] || '') + ', ' + (f['City'] || '') + ', ' + (f['State'] || '');\n  if (f['Phone']) info += ' | ' + f['Phone'];\n  if (f['Hours Mon-Sat']) info += ' | Mon-Sat: ' + f['Hours Mon-Sat'];\n  if (f['Hours Sunday']) info += ' | Sun: ' + f['Hours Sunday'];\n  return info;\n});\n\nreturn [{ json: { results: [{ toolCallId, result: lines.join('\\n') }] } }];"
+      }
+    },
+    {
+      "id": "f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [300, 0],
+      "parameters": { "respondWith": "firstIncomingItem", "options": {} }
+    }
+  ],
+  "connections": {
+    "Webhook":          { "main": [[{ "node": "Lookup Locations", "type": "main", "index": 0 }]] },
+    "Lookup Locations": { "main": [[{ "node": "Respond",          "type": "main", "index": 0 }]] }
+  }
+}

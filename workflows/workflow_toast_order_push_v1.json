@@ -1,104 +1,44 @@
 {
   "name": "toast_order_push_v1",
+  "settings": { "executionOrder": "v1" },
   "nodes": [
     {
       "id": "4af3ac54-7837-47c6-b3da-ce7c5c0ec351",
       "name": "Vapi Webhook",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [-160, -144],
+      "typeVersion": 2.1,
+      "position": [-200, 0],
       "parameters": {
-        "multipleMethods": false,
         "httpMethod": "POST",
         "path": "vapi-push-order",
-        "authentication": "none",
         "responseMode": "responseNode",
-        "webhookNotice": "",
         "options": {}
-      }
+      },
+      "webhookId": "296e077f-4be1-439a-903e-aa09f3f21a06"
     },
     {
       "id": "e28e0627-ab73-4851-9f4d-99ef60744a1b",
-      "name": "Code in JavaScript",
+      "name": "Parse and Log Order",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [64, -144],
+      "position": [60, 0],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const body = $input.first().json.body || $input.first().json;\nreturn [{ json: body }];"
-      }
-    },
-    {
-      "id": "airtable-orders-node-001",
-      "name": "Log Order to Airtable",
-      "type": "n8n-nodes-base.airtable",
-      "typeVersion": 2.2,
-      "position": [288, -144],
-      "parameters": {
-        "operation": "create",
-        "base": {
-          "__rl": true,
-          "value": "appmBaUD39bNFM4QA",
-          "mode": "id"
-        },
-        "table": {
-          "__rl": true,
-          "value": "tblQkG1DeczNyWsyM",
-          "mode": "id"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "Caller Name": "={{ $json.customerName || $json.body?.customerName || '' }}",
-            "Order Items": "={{ $json.orderSummary || $json.body?.orderSummary || JSON.stringify($json) }}",
-            "Language": "={{ $json.language || $json.body?.language || '' }}",
-            "Timestamp": "={{ new Date().toISOString() }}",
-            "Raw Order JSON": "={{ JSON.stringify($json) }}"
-          },
-          "matchingColumns": [],
-          "schema": []
-        },
-        "options": {}
-      },
-      "credentials": {
-        "airtableTokenApi": {
-          "id": "otkgs9oolwSO4bW3",
-          "name": "ZosGoodBurger Airtable"
-        }
+        "jsCode": "const PAT = 'REDACTED__SET_AS_N8N_ENV_VAR_AIRTABLE_PAT';\nconst BASE_ID = 'appmBaUD39bNFM4QA';\nconst TABLE_ID = 'tblQkG1DeczNyWsyM';\n\nconst body = $input.first().json.body || $input.first().json;\nconst toolCallList = body?.message?.toolCallList || [];\nconst toolCall = toolCallList[0] || {};\nconst toolCallId = toolCall.id || 'unknown';\nlet args = toolCall.function?.arguments || {};\nif (typeof args === 'string') args = JSON.parse(args);\n\nconst callId = body?.message?.call?.id || '';\nconst callerPhone = body?.message?.call?.customer?.number || '';\n\nconst customerName = args.customerName || 'Unknown';\nconst orderSummary = args.orderSummary || '';\nconst location = args.location || '';\nconst language = args.language || 'en';\nconst estimatedTotal = typeof args.estimatedTotal === 'number' ? args.estimatedTotal : parseFloat(args.estimatedTotal) || 0;\nconst items = args.items || [];\n\n// Build human-readable items list\nconst itemsText = items.map(i => {\n  let line = (i.quantity || 1) + 'x ' + i.name;\n  if (i.modifiers && i.modifiers.length) line += ' (' + i.modifiers.join(', ') + ')';\n  if (i.price) line += ' — $' + Number(i.price).toFixed(2);\n  return line;\n}).join('\\n');\n\n// Write to Airtable\nconst record = {\n  fields: {\n    'fld0ueP1iMC8t8w3H': customerName,\n    'fld5t3J3iVgrZMWqN': itemsText || orderSummary,\n    'fldzT5EEtMrmx2Smp': location,\n    'fldHWx4jyAI8ih68i': callerPhone,\n    'fldZpM4vLB5ryl2Eg': estimatedTotal,\n    'fld5UKntch8ztKHyE': language,\n    'fldBpeYTgz9dBVbwH': callId,\n    'fldtavp7YkLSt1OZr': new Date().toISOString(),\n    'flditfDYa3x08ZaWR': JSON.stringify(args, null, 2)\n  }\n};\n\nconst res = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.airtable.com/v0/' + BASE_ID + '/' + TABLE_ID,\n  headers: { Authorization: 'Bearer ' + PAT, 'Content-Type': 'application/json' },\n  body: JSON.stringify({ records: [record] })\n});\n\nreturn [{\n  json: {\n    results: [{\n      toolCallId,\n      result: 'Order received for ' + customerName + '. Ready in about 15 to 20 minutes.'\n    }]\n  }\n}];"
       }
     },
     {
       "id": "277f858a-4669-4919-88eb-26896fb7c1f2",
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [512, -144],
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ status: 'received' }) }}",
-        "options": {}
-      }
+      "typeVersion": 1.5,
+      "position": [300, 0],
+      "parameters": { "respondWith": "firstIncomingItem", "options": {} }
     }
   ],
   "connections": {
-    "Vapi Webhook": {
-      "main": [
-        [{ "node": "Code in JavaScript", "type": "main", "index": 0 }]
-      ]
-    },
-    "Code in JavaScript": {
-      "main": [
-        [{ "node": "Log Order to Airtable", "type": "main", "index": 0 }]
-      ]
-    },
-    "Log Order to Airtable": {
-      "main": [
-        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
-      ]
-    }
-  },
-  "settings": {
-    "executionOrder": "v1"
+    "Vapi Webhook":       { "main": [[{ "node": "Parse and Log Order", "type": "main", "index": 0 }]] },
+    "Parse and Log Order":{ "main": [[{ "node": "Respond to Webhook",  "type": "main", "index": 0 }]] }
   }
 }
