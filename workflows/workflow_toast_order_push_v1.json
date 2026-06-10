@@ -1,44 +1,82 @@
 {
-  "name": "toast_order_push_v1",
-  "settings": { "executionOrder": "v1" },
-  "nodes": [
-    {
-      "id": "4af3ac54-7837-47c6-b3da-ce7c5c0ec351",
-      "name": "Vapi Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2.1,
-      "position": [-200, 0],
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "vapi-push-order",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "webhookId": "296e077f-4be1-439a-903e-aa09f3f21a06"
-    },
-    {
-      "id": "e28e0627-ab73-4851-9f4d-99ef60744a1b",
-      "name": "Parse and Log Order",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [60, 0],
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "jsCode": "const PAT = 'REDACTED__SET_AS_N8N_ENV_VAR_AIRTABLE_PAT';\nconst BASE_ID = 'appmBaUD39bNFM4QA';\nconst TABLE_ID = 'tblQkG1DeczNyWsyM';\n\nconst body = $input.first().json.body || $input.first().json;\nconst toolCallList = body?.message?.toolCallList || [];\nconst toolCall = toolCallList[0] || {};\nconst toolCallId = toolCall.id || 'unknown';\nlet args = toolCall.function?.arguments || {};\nif (typeof args === 'string') args = JSON.parse(args);\n\nconst callId = body?.message?.call?.id || '';\nconst callerPhone = body?.message?.call?.customer?.number || '';\n\nconst customerName = args.customerName || 'Unknown';\nconst orderSummary = args.orderSummary || '';\nconst location = args.location || '';\nconst language = args.language || 'en';\nconst estimatedTotal = typeof args.estimatedTotal === 'number' ? args.estimatedTotal : parseFloat(args.estimatedTotal) || 0;\nconst items = args.items || [];\n\n// Build human-readable items list\nconst itemsText = items.map(i => {\n  let line = (i.quantity || 1) + 'x ' + i.name;\n  if (i.modifiers && i.modifiers.length) line += ' (' + i.modifiers.join(', ') + ')';\n  if (i.price) line += ' — $' + Number(i.price).toFixed(2);\n  return line;\n}).join('\\n');\n\n// Write to Airtable\nconst record = {\n  fields: {\n    'fld0ueP1iMC8t8w3H': customerName,\n    'fld5t3J3iVgrZMWqN': itemsText || orderSummary,\n    'fldzT5EEtMrmx2Smp': location,\n    'fldHWx4jyAI8ih68i': callerPhone,\n    'fldZpM4vLB5ryl2Eg': estimatedTotal,\n    'fld5UKntch8ztKHyE': language,\n    'fldBpeYTgz9dBVbwH': callId,\n    'fldtavp7YkLSt1OZr': new Date().toISOString(),\n    'flditfDYa3x08ZaWR': JSON.stringify(args, null, 2)\n  }\n};\n\nconst res = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.airtable.com/v0/' + BASE_ID + '/' + TABLE_ID,\n  headers: { Authorization: 'Bearer ' + PAT, 'Content-Type': 'application/json' },\n  body: JSON.stringify({ records: [record] })\n});\n\nreturn [{\n  json: {\n    results: [{\n      toolCallId,\n      result: 'Order received for ' + customerName + '. Ready in about 15 to 20 minutes.'\n    }]\n  }\n}];"
-      }
-    },
-    {
-      "id": "277f858a-4669-4919-88eb-26896fb7c1f2",
-      "name": "Respond to Webhook",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.5,
-      "position": [300, 0],
-      "parameters": { "respondWith": "firstIncomingItem", "options": {} }
-    }
-  ],
-  "connections": {
-    "Vapi Webhook":       { "main": [[{ "node": "Parse and Log Order", "type": "main", "index": 0 }]] },
-    "Parse and Log Order":{ "main": [[{ "node": "Respond to Webhook",  "type": "main", "index": 0 }]] }
-  }
+    "name":  "toast_order_push_v1",
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "nodes":  [
+                  {
+                      "id":  "4af3ac54-7837-47c6-b3da-ce7c5c0ec351",
+                      "name":  "Vapi Webhook",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  2.1,
+                      "position":  [
+                                       -200,
+                                       0
+                                   ],
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "vapi-push-order",
+                                         "responseMode":  "responseNode",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "webhookId":  "296e077f-4be1-439a-903e-aa09f3f21a06"
+                  },
+                  {
+                      "id":  "e28e0627-ab73-4851-9f4d-99ef60744a1b",
+                      "name":  "Parse and Log Order",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       60,
+                                       0
+                                   ],
+                      "parameters":  {
+                                         "mode":  "runOnceForAllItems",
+                                         "language":  "javaScript",
+                                         "jsCode":  "const PAT = \u0027REDACTED__SET_AS_N8N_ENV_VAR_AIRTABLE_PAT\u0027;\nconst BASE_ID = \u0027appmBaUD39bNFM4QA\u0027;\nconst TABLE_ID = \u0027tblQkG1DeczNyWsyM\u0027;\n\nconst TWILIO_SID = \u0027REDACTED__SET_AS_N8N_ENV_VAR_TWILIO_SID\u0027;\nconst TWILIO_AUTH = \u0027REDACTED__SET_AS_N8N_ENV_VAR_TWILIO_AUTH\u0027;\nconst TWILIO_FROM = \u0027+13136311176\u0027;\nconst TWILIO_TO = \u0027\u0027; // restaurant notification number â€” set once Hassan confirms\n\nconst body = $input.first().json.body || $input.first().json;\nconst toolCallList = body?.message?.toolCallList || [];\nconst toolCall = toolCallList[0] || {};\nconst toolCallId = toolCall.id || \u0027unknown\u0027;\nlet args = toolCall.function?.arguments || {};\nif (typeof args === \u0027string\u0027) args = JSON.parse(args);\n\nconst callId = body?.message?.call?.id || \u0027\u0027;\nconst callerPhone = body?.message?.call?.customer?.number || \u0027\u0027;\n\nconst customerName = args.customerName || \u0027Unknown\u0027;\nconst orderSummary = args.orderSummary || \u0027\u0027;\nconst location = args.location || \u0027\u0027;\nconst language = args.language || \u0027en\u0027;\nconst estimatedTotal = typeof args.estimatedTotal === \u0027number\u0027 ? args.estimatedTotal : parseFloat(args.estimatedTotal) || 0;\nconst items = args.items || [];\n\n// Build human-readable items list\nconst itemsText = items.map(i =\u003e {\n  let line = (i.quantity || 1) + \u0027x \u0027 + i.name;\n  if (i.modifiers \u0026\u0026 i.modifiers.length) line += \u0027 (\u0027 + i.modifiers.join(\u0027, \u0027) + \u0027)\u0027;\n  if (i.price) line += \u0027 - $\u0027 + Number(i.price).toFixed(2);\n  return line;\n}).join(\u0027\\n\u0027);\n\nconst orderText = itemsText || orderSummary;\n\n// Write to Airtable\nconst record = {\n  fields: {\n    \u0027fld0ueP1iMC8t8w3H\u0027: customerName,\n    \u0027fld5t3J3iVgrZMWqN\u0027: orderText,\n    \u0027fldzT5EEtMrmx2Smp\u0027: location,\n    \u0027fldHWx4jyAI8ih68i\u0027: callerPhone,\n    \u0027fldZpM4vLB5ryl2Eg\u0027: estimatedTotal,\n    \u0027fld5UKntch8ztKHyE\u0027: language,\n    \u0027fldBpeYTgz9dBVbwH\u0027: callId,\n    \u0027fldtavp7YkLSt1OZr\u0027: new Date().toISOString(),\n    \u0027flditfDYa3x08ZaWR\u0027: JSON.stringify(args, null, 2),\n    \u0027fldGDlt6DNHF1iH4m\u0027: \u0027New\u0027\n  }\n};\n\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: \u0027https://api.airtable.com/v0/\u0027 + BASE_ID + \u0027/\u0027 + TABLE_ID,\n  headers: { Authorization: \u0027Bearer \u0027 + PAT, \u0027Content-Type\u0027: \u0027application/json\u0027 },\n  body: JSON.stringify({ records: [record] })\n});\n\n// SMS notification to restaurant staff (skipped until TWILIO_TO is set)\nif (TWILIO_TO) {\n  const smsBody = \u0027New phone order: \u0027 + customerName + \u0027 - \u0027 + (location || \u0027pickup\u0027) + \u0027\\n\u0027 + orderText + \u0027\\nTotal: $\u0027 + estimatedTotal.toFixed(2);\n  const params = new URLSearchParams({ To: TWILIO_TO, From: TWILIO_FROM, Body: smsBody });\n  await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: \u0027https://api.twilio.com/2010-04-01/Accounts/\u0027 + TWILIO_SID + \u0027/Messages.json\u0027,\n    headers: {\n      Authorization: \u0027Basic \u0027 + Buffer.from(TWILIO_SID + \u0027:\u0027 + TWILIO_AUTH).toString(\u0027base64\u0027),\n      \u0027Content-Type\u0027: \u0027application/x-www-form-urlencoded\u0027\n    },\n    body: params.toString()\n  });\n}\n\nreturn [{\n  json: {\n    results: [{\n      toolCallId,\n      result: \u0027Order received for \u0027 + customerName + \u0027. Ready in about 15 to 20 minutes.\u0027\n    }]\n  }\n}];\n"
+                                     }
+                  },
+                  {
+                      "id":  "277f858a-4669-4919-88eb-26896fb7c1f2",
+                      "name":  "Respond to Webhook",
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1.5,
+                      "position":  [
+                                       300,
+                                       0
+                                   ],
+                      "parameters":  {
+                                         "respondWith":  "firstIncomingItem",
+                                         "options":  {
+
+                                                     }
+                                     }
+                  }
+              ],
+    "connections":  {
+                        "Vapi Webhook":  {
+                                             "main":  [
+                                                          [
+                                                              {
+                                                                  "node":  "Parse and Log Order",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ]
+                                                      ]
+                                         },
+                        "Parse and Log Order":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Respond to Webhook",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                }
+                    }
 }
