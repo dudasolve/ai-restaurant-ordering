@@ -18,14 +18,18 @@ $root = Join-Path (Split-Path $PSScriptRoot -Parent) "..\beyond-juicery-dashboar
 #     { "key": "AIRTABLE_PAT", "value": "<token>", "type": "encrypted", "target": ["production","preview","development"] }
 #     { "key": "AIRTABLE_BASE_ID", "value": "appmBaUD39bNFM4QA", ... }
 #     { "key": "AIRTABLE_ORDERS_TABLE", "value": "tblQkG1DeczNyWsyM", ... }
+#     { "key": "DASHBOARD_PASSWORD", "value": "beyond", ... }
 
 # --- Build deployment files ---
 $files = @(
     "package.json",
     "next.config.js",
+    "middleware.js",
     "app/layout.js",
     "app/page.js",
     "app/globals.css",
+    "app/login/page.js",
+    "app/api/login/route.js",
     "app/api/orders/route.js",
     "app/api/orders/[id]/route.js"
 )

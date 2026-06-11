@@ -15,7 +15,7 @@ see `.gitignore`).
 
 ## Live deployments
 
-- Order dashboard: https://beyond-juicery-dashboard.vercel.app
+- Order dashboard: https://beyond-juicery-dashboard.vercel.app (password protected, see `.credentials/credentials.local.md`)
 
 If `.credentials/credentials.local.md` is lost, regenerate tokens from each
 service's dashboard and re-paste — nothing depends on a specific file format
