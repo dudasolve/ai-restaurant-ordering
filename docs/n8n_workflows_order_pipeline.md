@@ -46,22 +46,14 @@ Recording URL and Transcript only populate **after** a call ends — Vapi sends 
 `end-of-call-report` event once the call is complete, and the workflow matches it back to
 the order by `Call ID`.
 
-## URGENT — n8n execution limit reached (since 2026-06-12 ~03:25 UTC)
+## RESOLVED — n8n execution limit (2026-06-12)
 
-Every workflow execution on this n8n Cloud account (all 5 workflows — order push,
-menu info, locations, call-start context, callback receiver) has been failing with:
-
-> "Execution limit reached. Consider upgrading your plan."
-
-This is an **account-level n8n Cloud plan limit**, not a bug in any workflow. It started
-around 03:25 UTC on 2026-06-12 and has been failing on every single call/webhook since —
-**no phone orders, menu lookups, or location lookups are being processed right now**.
-
-**Action required (Hassan/account owner):** go to
-https://app.n8n.cloud/account/change-plan and upgrade the plan (or wait for the monthly
-quota reset, if this is a usage-based reset rather than a hard cap). This blocks
-everything, including the order-total/modifications fix below — the fix is deployed and
-correct, but cannot be verified end-to-end until executions are unblocked.
+Earlier on 2026-06-12 (~03:25 UTC), the n8n Cloud account hit its execution limit and every
+workflow (order push, menu info, locations, call-start context, callback receiver) was
+failing with "Execution limit reached. Consider upgrading your plan." Hassan upgraded the
+n8n Cloud plan the same day — executions are succeeding again (verified via
+`/api/v1/executions`), and the Ticket ID + Pickup Time fix below was tested end-to-end
+successfully.
 
 ## Order total + modifications fix (2026-06-12)
 
@@ -110,8 +102,14 @@ order card, displays the pickup time, and supports searching/filtering by ticket
 customer name, phone, status, and date range. A new `/analytics` page shows order counts,
 acceptance/rejection rates, revenue, and average order value.
 
-**To deploy:** same as above — update the "Parse and Log Order" Code node with the new
-`workflow_toast_order_push_v1.json` and set `$env.AIRTABLE_PAT`.
+**Deployed (2026-06-12):**
+- n8n: live `toast_order_push_v1` workflow updated and verified (test order returned
+  "Your ticket number is 1000" and wrote `Ticket ID`/`Pickup Time` correctly to Airtable).
+- Vapi assistant `b9c95d99-575d-4202-90af-652a19509b8b` ("Beyond Juicery - Bea"): system
+  prompt updated to `order_taker_v9.md` (with the pickup-time question and 6-element
+  closing recap), and the `pushOrder` tool schema now includes `location`, `language`, and
+  `pickupTime` as required parameters (alongside the existing `notes`/`menuItemId`).
+- Dashboard: pushed to `beyond-juicery-dashboard` main, auto-deploys via Vercel.
 
 ## "Never Miss an Order" flow (Phase 1.5)
 
