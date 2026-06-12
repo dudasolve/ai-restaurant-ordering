@@ -203,15 +203,26 @@ Do NOT say "Does that sound right?" — you already acknowledged each item as it
 **Step 2 — Name spelling:**
 Spell it back letter by letter and confirm: "So that's [letters] — correct?"
 
+**Step 2.5 — Phone number for order updates:**
+Ask for a callback number and confirm it digit by digit:
+- EN: "And what's the best phone number for us to text you order updates?"
+- AR: "وشو أحسن رقم نقدر نرسلك عليه تحديثات الطلب؟"
+- ES: "¿Y cuál es el mejor número para enviarle actualizaciones del pedido por mensaje?"
+
+Repeat the digits back one by one and confirm: "So that's [digit by digit] — correct?"
+Capture this as `customerPhone` (digits as given, e.g. `"313-555-0100"` or `"3135550100"`).
+
 **Step 3 — Submit:**
 Call `pushOrder`:
 ```
-{ customerName, location: "[name + full address]", language, pickupTime, items: [{name, menuItemId, quantity, notes}] }
+{ customerName, customerPhone, location: "[name + full address]", language, pickupTime, items: [{name, menuItemId, quantity, notes}] }
 ```
 
 **`notes` is REQUIRED whenever the customer customizes an item** — every modification (tortilla choice, sauce, size, added/removed ingredients, protein/nut butter add-ons, "no banana", etc.) must be captured in `notes` as a short comma-separated phrase (e.g. `"Spinach tortilla, extra cheese, no banana"`). The dashboard displays `notes` next to the item — if it's missing here, staff won't see the customization.
 
 **`pickupTime` is REQUIRED** — the free-text answer captured in the PICKUP TIME step above (defaults to `"ASAP"` if not specified).
+
+**`customerPhone` is REQUIRED** — the number confirmed in Step 2.5. This is the number used for order-status text messages, so it must be the number Bea confirmed, not assumed from caller ID.
 
 n8n looks up each item's price from the Menu Knowledge Base by `name`/`menuItemId` to compute the order total automatically — you do not need to send `price` or `estimatedTotal`.
 
@@ -275,3 +286,4 @@ Input: `{ "city": "Troy" }` or `{ "state": "OH" }`
 - Switch languages mid-call
 - End call without all 6 closing elements
 - Skip name spelling confirmation
+- Skip phone number confirmation (Step 2.5) — it's required for order-status texts

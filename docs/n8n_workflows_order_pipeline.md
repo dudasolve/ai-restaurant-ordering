@@ -111,6 +111,45 @@ acceptance/rejection rates, revenue, and average order value.
   `pickupTime` as required parameters (alongside the existing `notes`/`menuItemId`).
 - Dashboard: pushed to `beyond-juicery-dashboard` main, auto-deploys via Vercel.
 
+## Customer SMS Confirmation (2026-06-12)
+
+Client feedback item: confirm the customer's order with a text message, and confirm again
+once the restaurant accepts it.
+
+**Phone collection (`prompts/order_taker_v9.md`):**
+- New "Step 2.5 — Phone number for order updates": Bea asks for a callback number and
+  confirms it digit by digit before submitting the order.
+- Captured as `customerPhone` and sent to `pushOrder` (now a **required** field on the
+  live `pushOrder` tool schema, vapi tool `67e81ec8-2853-4aa0-9737-8cb209f9c3b4`).
+
+**Order-received SMS (`workflow_toast_order_push_v1.json`):**
+- `contactPhone = args.customerPhone || callerIdPhone` (caller ID is the fallback if Bea
+  didn't capture a number for some reason).
+- `contactPhone` is written to the Airtable "Phone" field (`fldHWx4jyAI8ih68i`).
+- Immediately after the Airtable write, sends an SMS to `contactPhone` from
+  `+13136311176`: *"We got your order! Ticket #[id]. Pickup: [time]. We will text you
+  when the restaurant confirms it."* Wrapped in try/catch — SMS failure never blocks the
+  order write.
+
+**Order-accepted SMS (`beyond-juicery-dashboard/app/api/orders/[id]/route.js`):**
+- When staff click "Accept" (PATCH status → `Accepted`), the route sends a second SMS to
+  the order's `Phone` field from `+13136311176`: *"Your order #[ticket] has been
+  confirmed! Pickup: [time] at [location]. See you soon!"* Also wrapped in try/catch.
+
+**New Vercel env vars added to `beyond-juicery-dashboard`** (production/preview/dev):
+`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` (`+13136311176`, same
+number used for the n8n-side SMS).
+
+**Deployed (2026-06-12):**
+- n8n: live `toast_order_push_v1` updated and verified end-to-end (test order correctly
+  wrote the confirmed `customerPhone` to the "Phone" field; cleaned up afterward).
+- Vapi assistant: prompt updated with Step 2.5, and the `pushOrder` tool schema now
+  requires `customerPhone`.
+- Dashboard: pushed to `beyond-juicery-dashboard` main, auto-deploys via Vercel.
+
+This is unrelated to the restaurant-side `TWILIO_TO` notification SMS, which remains
+inert (`TWILIO_TO = ''`) — still pending Hassan's confirmation of a notification number.
+
 ## "Never Miss an Order" flow (Phase 1.5)
 
 `toast_order_push_v1` now does two things on every new order:
