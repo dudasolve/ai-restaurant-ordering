@@ -10,7 +10,7 @@ token; never commit that value here.
 | Workflow | File | Webhook path | Purpose |
 |---|---|---|---|
 | `vapi_call_start_context` | `workflow_vapi_call_start_context_v1.json` | `/vapi-call-start` | Pre-loads active store locations into the assistant's context at call start (cached 6h); on `end-of-call-report` it patches the matching Orders record with the Recording URL + Transcript |
-| `toast_order_push_v1` | `workflow_toast_order_push_v1.json` | `/vapi-push-order` | Receives the `pushOrder` tool call, parses items/modifiers/total, writes a new record to the Airtable **Orders** table with `Order Status = New`, and (once a notification number is set) sends a Twilio SMS alert |
+| `toast_order_push_v1` | `workflow_toast_order_push_v1.json` | `/vapi-push-order` | Receives the `pushOrder` tool call, parses items + customization notes, looks up each item's price in the **Menu Knowledge Base** to compute the order total, writes a new record to the Airtable **Orders** table with `Order Status = New`, and (once a notification number is set) sends a Twilio SMS alert |
 | `vapi_get_locations` | `workflow_vapi_get_locations_v1.json` | `/vapi-get-locations` | Fallback location lookup by city/state/name (cached 6h) |
 | `vapi_get_menu_info` | `workflow_vapi_get_menu_info_v1.json` | `/vapi-get-menu-info` | Ingredient/allergen lookups only — ordinary menu items are answered straight from the prompt for speed (cached 30min) |
 
@@ -39,10 +39,79 @@ To deploy or rotate the token:
 | Order Status | `fldGDlt6DNHF1iH4m` | Single select (New/Accepted/Rejected/Completed) | `toast_order_push_v1` (set to `New`); updated by the dashboard |
 | Recording URL | `fldgEdVyTu9OjeaFY` | URL | `vapi_call_start_context` (`end-of-call-report`) |
 | Transcript | `fldbApN3f2mBSi3Ea` | Long text | `vapi_call_start_context` (`end-of-call-report`) |
+| Ticket ID | `fldIbTNi6PPYBT3po` | Number (integer) | `toast_order_push_v1` |
+| Pickup Time | `fldHGqRFXOG12pdfF` | Single line text | `toast_order_push_v1` |
 
 Recording URL and Transcript only populate **after** a call ends — Vapi sends the
 `end-of-call-report` event once the call is complete, and the workflow matches it back to
 the order by `Call ID`.
+
+## URGENT — n8n execution limit reached (since 2026-06-12 ~03:25 UTC)
+
+Every workflow execution on this n8n Cloud account (all 5 workflows — order push,
+menu info, locations, call-start context, callback receiver) has been failing with:
+
+> "Execution limit reached. Consider upgrading your plan."
+
+This is an **account-level n8n Cloud plan limit**, not a bug in any workflow. It started
+around 03:25 UTC on 2026-06-12 and has been failing on every single call/webhook since —
+**no phone orders, menu lookups, or location lookups are being processed right now**.
+
+**Action required (Hassan/account owner):** go to
+https://app.n8n.cloud/account/change-plan and upgrade the plan (or wait for the monthly
+quota reset, if this is a usage-based reset rather than a hard cap). This blocks
+everything, including the order-total/modifications fix below — the fix is deployed and
+correct, but cannot be verified end-to-end until executions are unblocked.
+
+## Order total + modifications fix (2026-06-12)
+
+Client feedback after testing the dashboard:
+1. Order total wasn't showing (always $0.00).
+2. Customizations (e.g. "Total Energy + peanut butter") weren't carried into "Order Items".
+
+Root cause: the live `pushOrder` tool call sends `items: [{ name, notes, quantity, menuItemId }]`
+— no `price`/`estimatedTotal`, and the old Code node only wrote `Nx ItemName` to "Order Items",
+dropping `notes` entirely.
+
+Fix applied in `workflow_toast_order_push_v1.json`:
+- "Order Items" now appends `notes`/`modifiers` in parentheses, e.g. `1x Total Energy Smoothie (No banana, add whey protein) - $7.75`.
+- "Total" (`fldZpM4vLB5ryl2Eg`) is computed automatically by looking up each item's price in
+  the **Menu Knowledge Base** (now fully populated with live prices — see the menu sync done
+  the same week) via fuzzy name matching, cached for 30 minutes (same pattern as
+  `vapi_get_menu_info`). If Vapi ever sends `price`/`estimatedTotal` directly, those take
+  precedence.
+
+**To deploy:** re-import/update the "Parse and Log Order" Code node in n8n with the new
+`workflow_toast_order_push_v1.json`, and replace the hardcoded `PAT` line with
+`$env.AIRTABLE_PAT` (env var must be set — see "How the Airtable token is wired in" above).
+
+Also updated `prompts/order_taker_v9.md` to document that `notes` is required for any
+customization and that price/total no longer need to come from Bea.
+
+## Ticket ID + Pickup Time (2026-06-12)
+
+Second round of client feedback requested a ticket number system and visibility into
+requested pickup timing.
+
+Fix applied in `workflow_toast_order_push_v1.json`:
+- **Ticket ID** (`fldIbTNi6PPYBT3po`): before writing the new record, the Code node queries
+  Airtable for the current highest "Ticket ID" (`maxRecords=1`, sorted descending) and writes
+  `previous max + 1`. Starts at `1000` if no orders have a Ticket ID yet (or if the lookup
+  fails — non-fatal, falls back to `1000`).
+- **Pickup Time** (`fldHGqRFXOG12pdfF`): captured from the new `pickupTime` field on the
+  `pushOrder` tool call (free text, e.g. `"ASAP"`, `"in 2 hours"`, `"5:30 PM"`). Defaults to
+  `"ASAP"` if not provided.
+- The `result` returned to Vapi now includes the ticket number, e.g. *"Your ticket number is
+  1004."* — `prompts/order_taker_v9.md` was updated so Bea reads this back to the customer in
+  the closing recap along with the pickup time.
+
+The dashboard (`beyond-juicery-dashboard`) now shows the ticket number as a badge on each
+order card, displays the pickup time, and supports searching/filtering by ticket number,
+customer name, phone, status, and date range. A new `/analytics` page shows order counts,
+acceptance/rejection rates, revenue, and average order value.
+
+**To deploy:** same as above — update the "Parse and Log Order" Code node with the new
+`workflow_toast_order_push_v1.json` and set `$env.AIRTABLE_PAT`.
 
 ## "Never Miss an Order" flow (Phase 1.5)
 
