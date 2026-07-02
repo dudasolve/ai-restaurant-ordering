@@ -1,44 +1,65 @@
-﻿{
+{
   "name": "toast_order_push_v1",
-  "settings": {
-    "executionOrder": "v1"
-  },
   "nodes": [
     {
-      "id": "4af3ac54-7837-47c6-b3da-ce7c5c0ec351",
+      "id": "webhook-push-001",
       "name": "Vapi Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
-      "position": [-200, 0],
+      "position": [
+        -200,
+        0
+      ],
       "parameters": {
         "httpMethod": "POST",
         "path": "vapi-push-order",
         "responseMode": "responseNode",
         "options": {}
       },
-      "webhookId": "296e077f-4be1-439a-903e-aa09f3f21a06"
+      "webhookId": "4d6c8034-f24e-44c3-b954-8b87f6fd2f52"
     },
     {
-      "id": "e28e0627-ab73-4851-9f4d-99ef60744a1b",
-      "name": "Parse and Log Order",
+      "id": "code-push-001",
+      "name": "Parse and Quick-Respond",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [60, 0],
+      "position": [
+        60,
+        0
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const PAT = $env.AIRTABLE_PAT;\nconst BASE_ID = 'appmBaUD39bNFM4QA';\nconst TABLE_ID = 'tblQkG1DeczNyWsyM';\nconst MENU_TABLE_ID = 'tbltYZZMUsQg5rxPC';\nconst MENU_CACHE_TTL = 30 * 60 * 1000; // 30 minutes\n\nconst TWILIO_SID = 'REDACTED__SET_AS_N8N_ENV_VAR_TWILIO_SID';\nconst TWILIO_AUTH = 'REDACTED__SET_AS_N8N_ENV_VAR_TWILIO_AUTH';\nconst TWILIO_FROM = '+13136311176';\nconst TWILIO_TO = ''; // restaurant notification number -- set once Hassan confirms\n\nconst body = $input.first().json.body || $input.first().json;\nconst toolCallList = body?.message?.toolCallList || [];\nconst toolCall = toolCallList[0] || {};\nconst toolCallId = toolCall.id || 'unknown';\nlet args = toolCall.function?.arguments || {};\nif (typeof args === 'string') args = JSON.parse(args);\n\nconst callId = body?.message?.call?.id || '';\nconst callerIdPhone = body?.message?.call?.customer?.number || '';\n\nconst customerName = args.customerName || 'Unknown';\nconst location = args.location || '';\nconst language = args.language || 'en';\nconst items = args.items || [];\nconst pickupTime = args.pickupTime || 'ASAP';\n\n// -- Prefer the phone number Bea confirmed with the customer; fall back to caller ID --\nconst contactPhone = args.customerPhone || callerIdPhone;\n\n// -- Load menu prices (cached -- refreshed every 30 min, same pattern as vapi_get_menu_info) --\nconst cache = $getWorkflowStaticData('global');\nconst now = Date.now();\nlet menu = cache.menu;\nif (!menu || (now - menu.ts) > MENU_CACHE_TTL) {\n  let records = [];\n  let offset;\n  do {\n    const url = 'https://api.airtable.com/v0/' + BASE_ID + '/' + MENU_TABLE_ID +\n      '?fields[]=Item%20Name&fields[]=Price&pageSize=100' +\n      (offset ? '&offset=' + offset : '');\n    const res = await this.helpers.httpRequest({ method: 'GET', url, headers: { Authorization: 'Bearer ' + PAT } });\n    records = records.concat(res.records || []);\n    offset = res.offset;\n  } while (offset);\n\n  menu = {\n    ts: now,\n    prices: records.map(r => ({ name: r.fields['Item Name'] || '', price: Number(r.fields['Price']) || 0 }))\n  };\n  cache.menu = menu;\n}\n\n// -- Normalize + fuzzy-match helper for looking up menu prices --\nfunction normalize(s) {\n  return (s || '')\n    .toLowerCase()\n    .replace(/[^a-z0-9 ]/g, ' ')\n    .replace(/\\b(smoothie|wrap|bowl|salad|juice|burrito)\\b/g, '')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfunction findPrice(name, menuItemId) {\n  const candidates = [name, menuItemId].filter(Boolean).map(normalize).filter(Boolean);\n\n  for (const c of candidates) {\n    const exact = menu.prices.find(m => normalize(m.name) === c);\n    if (exact) return exact.price;\n  }\n  for (const c of candidates) {\n    const partial = menu.prices.find(m => {\n      const mn = normalize(m.name);\n      return mn && (mn.includes(c) || c.includes(mn));\n    });\n    if (partial) return partial.price;\n  }\n  return null;\n}\n\n// -- Build human-readable items list (with modifications) and order total --\nlet total = 0;\nconst itemsText = items.map(i => {\n  const qty = i.quantity || 1;\n  let line = qty + 'x ' + i.name;\n\n  const extras = [];\n  if (i.notes) extras.push(i.notes);\n  if (i.modifiers && i.modifiers.length) extras.push(i.modifiers.join(', '));\n  if (extras.length) line += ' (' + extras.join(', ') + ')';\n\n  const price = (typeof i.price === 'number') ? i.price : findPrice(i.name, i.menuItemId);\n  if (price != null) {\n    total += price * qty;\n    line += ' - $' + price.toFixed(2);\n  }\n\n  return line;\n}).join('\\n');\n\nconst orderText = itemsText || args.orderSummary || '';\nconst estimatedTotal = (typeof args.estimatedTotal === 'number')\n  ? args.estimatedTotal\n  : Math.round(total * 100) / 100;\n\n// -- Compute next Ticket ID (previous max + 1, starting at 1000) --\nlet ticketId = 1000;\ntry {\n  const tRes = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'https://api.airtable.com/v0/' + BASE_ID + '/' + TABLE_ID +\n      '?maxRecords=1&sort%5B0%5D%5Bfield%5D=Ticket%20ID&sort%5B0%5D%5Bdirection%5D=desc&fields%5B%5D=Ticket%20ID',\n    headers: { Authorization: 'Bearer ' + PAT }\n  });\n  const top = tRes.records && tRes.records[0];\n  const topTicket = top && top.fields['Ticket ID'];\n  if (typeof topTicket === 'number') ticketId = topTicket + 1;\n} catch (e) {\n  // fall back to default starting ticket number if the lookup fails\n}\n\n// Write to Airtable\nconst record = {\n  fields: {\n    'fld0ueP1iMC8t8w3H': customerName,\n    'fld5t3J3iVgrZMWqN': orderText,\n    'fldzT5EEtMrmx2Smp': location,\n    'fldHWx4jyAI8ih68i': contactPhone,\n    'fldZpM4vLB5ryl2Eg': estimatedTotal,\n    'fld5UKntch8ztKHyE': language,\n    'fldBpeYTgz9dBVbwH': callId,\n    'fldtavp7YkLSt1OZr': new Date().toISOString(),\n    'flditfDYa3x08ZaWR': JSON.stringify(args, null, 2),\n    'fldGDlt6DNHF1iH4m': 'New',\n    'fldIbTNi6PPYBT3po': ticketId,\n    'fldHGqRFXOG12pdfF': pickupTime\n  }\n};\n\nawait this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.airtable.com/v0/' + BASE_ID + '/' + TABLE_ID,\n  headers: { Authorization: 'Bearer ' + PAT, 'Content-Type': 'application/json' },\n  body: JSON.stringify({ records: [record] })\n});\n\n// -- Order received confirmation SMS to the customer --\nif (contactPhone) {\n  try {\n    const smsBody = 'Beyond Juicery: We got your order! Ticket #' + ticketId + '. Pickup: ' + pickupTime + '. We will text you when the restaurant confirms it.';\n    const params = new URLSearchParams({ To: contactPhone, From: TWILIO_FROM, Body: smsBody });\n    await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://api.twilio.com/2010-04-01/Accounts/' + TWILIO_SID + '/Messages.json',\n      headers: {\n        Authorization: 'Basic ' + Buffer.from(TWILIO_SID + ':' + TWILIO_AUTH).toString('base64'),\n        'Content-Type': 'application/x-www-form-urlencoded'\n      },\n      body: params.toString()\n    });\n  } catch (e) {\n    // SMS failure should not block the order from being logged\n  }\n}\n\n// SMS notification to restaurant staff (skipped until TWILIO_TO is set)\nif (TWILIO_TO) {\n  const smsBody = 'New phone order #' + ticketId + ': ' + customerName + ' - ' + (location || 'pickup') + '\\n' + orderText + '\\nTotal: $' + estimatedTotal.toFixed(2) + '\\nPickup: ' + pickupTime;\n  const params = new URLSearchParams({ To: TWILIO_TO, From: TWILIO_FROM, Body: smsBody });\n  await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.twilio.com/2010-04-01/Accounts/' + TWILIO_SID + '/Messages.json',\n    headers: {\n      Authorization: 'Basic ' + Buffer.from(TWILIO_SID + ':' + TWILIO_AUTH).toString('base64'),\n      'Content-Type': 'application/x-www-form-urlencoded'\n    },\n    body: params.toString()\n  });\n}\n\nreturn [{\n  json: {\n    results: [{\n      toolCallId,\n      result: 'Order received for ' + customerName + '. Your ticket number is ' + ticketId + '. Ready in about 15 to 20 minutes.'\n    }]\n  }\n}];\n"
+        "jsCode": "const PAT = 'AIRTABLE_PAT_REDACTED';\nconst BASE_ID = 'appmBaUD39bNFM4QA';\nconst TABLE_ID = 'tblQkG1DeczNyWsyM';\nconst MENU_TABLE_ID = 'tbltYZZMUsQg5rxPC';\nconst MENU_CACHE_TTL = 30 * 60 * 1000;\n\nconst body = $input.first().json.body || $input.first().json;\nconst toolCallList = body?.message?.toolCallList || [];\nconst toolCall = toolCallList[0] || {};\nconst toolCallId = toolCall.id || 'unknown';\nlet args = toolCall.function?.arguments || {};\nif (typeof args === 'string') args = JSON.parse(args);\n\nconst callId = body?.message?.call?.id || '';\nconst callerIdPhone = body?.message?.call?.customer?.number || '';\n\nconst customerName = args.customerName || 'Unknown';\nconst location = args.location || '';\nconst language = args.language || 'en';\nconst items = args.items || [];\nconst pickupTime = args.pickupTime || 'ASAP';\n\nfunction normalizePhone(raw) {\n  if (!raw) return raw;\n  let p = raw.replace(/[^\\d+]/g, '');\n  if (p.startsWith('+')) return p;\n  if (p.length === 10) return '+1' + p;\n  if (p.length === 11 && p.startsWith('1')) return '+' + p;\n  return '+' + p;\n}\nconst contactPhone = normalizePhone(args.customerPhone || callerIdPhone);\n\n// Menu cache\nconst cache = $getWorkflowStaticData('global');\nconst now = Date.now();\nlet menu = cache.menu;\nif (!menu || (now - menu.ts) > MENU_CACHE_TTL) {\n  let records = [];\n  let offset;\n  do {\n    const url = 'https://api.airtable.com/v0/' + BASE_ID + '/' + MENU_TABLE_ID +\n      '?fields[]=Item%20Name&fields[]=Price&pageSize=100&filterByFormula=%7BAvailable%7D%3DTRUE()' +\n      (offset ? '&offset=' + offset : '');\n    const res = await this.helpers.httpRequest({ method: 'GET', url, headers: { Authorization: 'Bearer ' + PAT } });\n    records = records.concat(res.records || []);\n    offset = res.offset;\n  } while (offset);\n  menu = { ts: now, prices: records.map(r => ({ name: r.fields['Item Name'] || '', price: Number(r.fields['Price']) || 0 })) };\n  cache.menu = menu;\n}\n\nfunction normalize(s) {\n  return (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\\b(smoothie|wrap|bowl|salad|juice|burrito)\\b/g, '').replace(/\\s+/g, ' ').trim();\n}\nfunction findPrice(name, menuItemId) {\n  const candidates = [name, menuItemId].filter(Boolean).map(normalize).filter(Boolean);\n  for (const c of candidates) {\n    const exact = menu.prices.find(m => normalize(m.name) === c);\n    if (exact) return exact.price;\n  }\n  for (const c of candidates) {\n    const partial = menu.prices.find(m => { const mn = normalize(m.name); return mn && (mn.includes(c) || c.includes(mn)); });\n    if (partial) return partial.price;\n  }\n  return null;\n}\n\nlet total = 0;\nconst itemsText = items.map(i => {\n  const qty = i.quantity || 1;\n  let line = qty + 'x ' + i.name;\n  const extras = [];\n  if (i.notes) extras.push(i.notes);\n  if (i.modifiers && i.modifiers.length) extras.push(i.modifiers.join(', '));\n  if (extras.length) line += ' (' + extras.join(', ') + ')';\n  const price = (typeof i.price === 'number') ? i.price : findPrice(i.name, i.menuItemId);\n  if (price != null) { total += price * qty; line += ' - $' + price.toFixed(2); }\n  return line;\n}).join('\\n');\n\nconst estimatedTotal = Math.round(total * 100) / 100;\n\n// Ticket ID: fast read from Airtable (single record)\nlet ticketId = (cache.lastTicket || 1000) + 1;\ntry {\n  const tRes = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'https://api.airtable.com/v0/' + BASE_ID + '/' + TABLE_ID +\n      '?maxRecords=1&sort%5B0%5D%5Bfield%5D=Ticket%20ID&sort%5B0%5D%5Bdirection%5D=desc&fields%5B%5D=Ticket%20ID',\n    headers: { Authorization: 'Bearer ' + PAT }\n  });\n  const top = tRes.records?.[0];\n  const topTicket = top?.fields['Ticket ID'];\n  if (typeof topTicket === 'number' && topTicket > 0) ticketId = topTicket + 1;\n} catch (e) {}\ncache.lastTicket = ticketId;\n\n// Respond to Vapi immediately — Airtable write + SMS happen in the next node\nreturn [{\n  json: {\n    // Vapi tool response\n    results: [{\n      toolCallId,\n      result: '[ORDER_PLACED] ticket=' + ticketId + ' | total=$' + estimatedTotal.toFixed(2) + ' | name=' + customerName + ' | pickup=' + pickupTime\n    }],\n    // Passed to next node for async save\n    _order: {\n      customerName, contactPhone, location, language, items, pickupTime,\n      callId, ticketId, estimatedTotal, itemsText\n    }\n  }\n}];"
       }
     },
     {
-      "id": "277f858a-4669-4919-88eb-26896fb7c1f2",
+      "id": "respond-push-001",
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.5,
-      "position": [300, 0],
+      "typeVersion": 1.1,
+      "position": [
+        320,
+        0
+      ],
       "parameters": {
         "respondWith": "firstIncomingItem",
         "options": {}
+      }
+    },
+    {
+      "id": "code-save-001",
+      "name": "Save and Notify",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        580,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PAT = 'AIRTABLE_PAT_REDACTED';\nconst BASE_ID = 'appmBaUD39bNFM4QA';\nconst TABLE_ID = 'tblQkG1DeczNyWsyM';\nconst TWILIO_SID = 'TWILIO_ACCOUNT_SID_REDACTED';\nconst TWILIO_AUTH = 'TWILIO_AUTH_TOKEN_REDACTED';\nconst TWILIO_FROM = '+13136311176';\nconst TWILIO_TO_STAFF = '';\n\nconst data = $input.first().json._order;\nif (!data) return [{ json: { skipped: true, reason: 'no _order data' } }];\n\nconst { customerName, contactPhone, location, language, items, pickupTime,\n        callId, ticketId, estimatedTotal, itemsText } = data;\n\nconst errors = [];\n\n// ── 1. Write to Airtable ─────────────────────────────────────────────────\ntry {\n  await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.airtable.com/v0/' + BASE_ID + '/' + TABLE_ID,\n    headers: { Authorization: 'Bearer ' + PAT, 'Content-Type': 'application/json' },\n    body: JSON.stringify({\n      records: [{\n        fields: {\n          'Caller Name': customerName,\n          'Order Items': itemsText,\n          'Location': location,\n          'Phone': contactPhone,\n          'Total': estimatedTotal,\n          'Language': language,\n          'Call ID': callId,\n          'Timestamp': new Date().toISOString(),\n          'Raw Order JSON': JSON.stringify(items, null, 2),\n          'Order Status': 'New',\n          'Ticket ID': ticketId,\n          'Pickup Time': pickupTime\n        }\n      }]\n    })\n  });\n} catch (e) {\n  errors.push('airtable: ' + e.message);\n}\n\n// ── Helper: send Twilio SMS (logs full response for debugging) ────────────\nasync function sendSMS(to, body) {\n  const isUSCanada = to.startsWith('+1');\n  if (!isUSCanada) {\n    return { skipped: true, reason: 'international — Twilio US number cannot deliver to ' + to + '. Enable Geo Permissions at console.twilio.com > Messaging > Settings > Geo Permissions.' };\n  }\n  const b64auth = btoa(TWILIO_SID + ':' + TWILIO_AUTH);\n  const formBody = 'To=' + encodeURIComponent(to) + '&From=' + encodeURIComponent(TWILIO_FROM) + '&Body=' + encodeURIComponent(body);\n  const res = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.twilio.com/2010-04-01/Accounts/' + TWILIO_SID + '/Messages.json',\n    headers: { Authorization: 'Basic ' + b64auth, 'Content-Type': 'application/x-www-form-urlencoded' },\n    body: formBody\n  });\n  return {\n    sid: res.sid,\n    status: res.status,\n    error_code: res.error_code || null,\n    error_message: res.error_message || null,\n    to: res.to,\n    from: res.from\n  };\n}\n\n// ── 2. SMS to customer — now includes order items ─────────────────────────\nlet customerSmsResult = { skipped: true, reason: 'no phone' };\nif (contactPhone) {\n  try {\n    // itemsText looks like: \"1x Chicken Caesar Wrap (Spinach tortilla) - $11.95\\n1x Mango Refresher - $5.50\"\n    // Compact it to a single readable line for SMS, keep prices for customer fact-check.\n    const itemsLine = (itemsText || '').split('\\n').filter(Boolean).join('; ');\n    const msg = 'Beyond Juicery: Order #' + ticketId + ' received! Items: ' + itemsLine + '. Pickup: ' + pickupTime + \". We'll text you when it's ready.\";\n    customerSmsResult = await sendSMS(contactPhone, msg);\n  } catch (e) {\n    customerSmsResult = { error: e.message };\n    errors.push('customer_sms: ' + e.message);\n  }\n}\n\n// ── 3. SMS to staff ───────────────────────────────────────────────────────\nlet staffSmsResult = { skipped: true, reason: 'TWILIO_TO_STAFF not configured' };\nif (TWILIO_TO_STAFF) {\n  try {\n    const msg = 'New order #' + ticketId + ': ' + customerName + '\\n' + itemsText + '\\nTotal: $' + estimatedTotal.toFixed(2) + '\\nPickup: ' + pickupTime;\n    staffSmsResult = await sendSMS(TWILIO_TO_STAFF, msg);\n  } catch (e) {\n    staffSmsResult = { error: e.message };\n    errors.push('staff_sms: ' + e.message);\n  }\n}\n\nreturn [{ json: { saved: true, ticketId, customerSmsResult, staffSmsResult, errors } }];"
       }
     }
   ],
@@ -47,14 +68,14 @@
       "main": [
         [
           {
-            "node": "Parse and Log Order",
+            "node": "Parse and Quick-Respond",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Parse and Log Order": {
+    "Parse and Quick-Respond": {
       "main": [
         [
           {
@@ -64,6 +85,21 @@
           }
         ]
       ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        [
+          {
+            "node": "Save and Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
   }
 }

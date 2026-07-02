@@ -1,13 +1,15 @@
 {
   "name": "vapi_get_menu_info",
-  "settings": { "executionOrder": "v1" },
   "nodes": [
     {
       "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
-      "position": [-200, 0],
+      "position": [
+        -200,
+        0
+      ],
       "parameters": {
         "httpMethod": "POST",
         "path": "vapi-get-menu-info",
@@ -21,11 +23,14 @@
       "name": "Lookup Menu",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [60, 0],
+      "position": [
+        60,
+        0
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const CACHE_TTL = 30 * 60 * 1000; // 30 minutes\nconst PAT = 'REDACTED__SET_AS_N8N_ENV_VAR_AIRTABLE_PAT';\nconst BASE_ID = 'appmBaUD39bNFM4QA';\nconst TABLE_ID = 'tbltYZZMUsQg5rxPC';\n\nconst body = $input.first().json.body || $input.first().json;\nconst toolCallList = body?.message?.toolCallList || [];\nconst toolCall = toolCallList[0] || {};\nconst toolCallId = toolCall.id || 'unknown';\nlet args = toolCall.function?.arguments || {};\nif (typeof args === 'string') args = JSON.parse(args);\n\n// Build cache key and Airtable filter\nlet cacheKey, formula;\nif (args.category) {\n  cacheKey = 'cat_' + args.category;\n  formula = 'AND({Available}=TRUE(),{Category}=\"' + args.category + '\")';\n} else if (args.item) {\n  cacheKey = 'item_' + args.item.toLowerCase();\n  formula = 'AND({Available}=TRUE(),SEARCH(LOWER(\"' + args.item + '\"),LOWER({Item Name})))';\n} else if (args.query) {\n  cacheKey = 'q_' + args.query.toLowerCase();\n  formula = 'AND({Available}=TRUE(),OR(SEARCH(LOWER(\"' + args.query + '\"),LOWER({Item Name})),SEARCH(LOWER(\"' + args.query + '\"),LOWER({Description}))))';\n} else {\n  cacheKey = 'all';\n  formula = '{Available}=TRUE()';\n}\n\n// Check cache\nconst cache = $getWorkflowStaticData('global');\nconst now = Date.now();\nconst hit = cache[cacheKey];\nlet records;\n\nif (hit && (now - hit.ts) < CACHE_TTL) {\n  records = hit.data;\n} else {\n  const url = 'https://api.airtable.com/v0/' + BASE_ID + '/' + TABLE_ID +\n    '?filterByFormula=' + encodeURIComponent(formula) +\n    '&fields[]=Item%20Name&fields[]=Category&fields[]=Description&fields[]=Price&fields[]=Available';\n  const res = await this.helpers.httpRequest({ method: 'GET', url, headers: { Authorization: 'Bearer ' + PAT } });\n  records = res.records || [];\n  cache[cacheKey] = { data: records, ts: now };\n}\n\nif (records.length === 0) {\n  return [{ json: { results: [{ toolCallId, result: 'No items found for that query.' }] } }];\n}\n\nconst lines = records\n  .filter(r => r.fields['Available'] !== false)\n  .map(r => {\n    const f = r.fields;\n    const price = f['Price'] != null ? '$' + Number(f['Price']).toFixed(2) : 'price varies';\n    const desc = f['Description'] ? ' — ' + f['Description'] : '';\n    return f['Item Name'] + ' (' + price + ')' + desc;\n  });\n\nreturn [{ json: { results: [{ toolCallId, result: lines.join('\\n') }] } }];"
+        "jsCode": "const CACHE_TTL = 30 * 60 * 1000; // 30 minutes\nconst PAT = 'AIRTABLE_PAT_REDACTED';\nconst BASE_ID = 'appmBaUD39bNFM4QA';\nconst TABLE_ID = 'tbltYZZMUsQg5rxPC';\n\nconst body = $input.first().json.body || $input.first().json;\nconst toolCallList = body?.message?.toolCallList || [];\nconst toolCall = toolCallList[0] || {};\nconst toolCallId = toolCall.id || 'unknown';\nlet args = toolCall.function?.arguments || {};\nif (typeof args === 'string') args = JSON.parse(args);\n\n// Build cache key and Airtable filter\nlet cacheKey, formula;\nif (args.category) {\n  cacheKey = 'cat_' + args.category;\n  formula = 'AND({Available}=TRUE(),{Category}=\"' + args.category + '\")';\n} else if (args.item) {\n  cacheKey = 'item_' + args.item.toLowerCase();\n  formula = 'AND({Available}=TRUE(),SEARCH(LOWER(\"' + args.item + '\"),LOWER({Item Name})))';\n} else if (args.query) {\n  cacheKey = 'q_' + args.query.toLowerCase();\n  formula = 'AND({Available}=TRUE(),OR(SEARCH(LOWER(\"' + args.query + '\"),LOWER({Item Name})),SEARCH(LOWER(\"' + args.query + '\"),LOWER({Description}))))';\n} else {\n  cacheKey = 'all';\n  formula = '{Available}=TRUE()';\n}\n\n// Check cache\nconst cache = $getWorkflowStaticData('global');\nconst now = Date.now();\nconst hit = cache[cacheKey];\nlet records;\n\nif (hit && (now - hit.ts) < CACHE_TTL) {\n  records = hit.data;\n} else {\n  const url = 'https://api.airtable.com/v0/' + BASE_ID + '/' + TABLE_ID +\n    '?filterByFormula=' + encodeURIComponent(formula) +\n    '&fields[]=Item%20Name&fields[]=Category&fields[]=Description&fields[]=Price&fields[]=Available';\n  const res = await this.helpers.httpRequest({ method: 'GET', url, headers: { Authorization: 'Bearer ' + PAT } });\n  records = res.records || [];\n  cache[cacheKey] = { data: records, ts: now };\n}\n\nif (records.length === 0) {\n  return [{ json: { results: [{ toolCallId, result: 'No items found for that query.' }] } }];\n}\n\nconst lines = records\n  .filter(r => r.fields['Available'] !== false)\n  .map(r => {\n    const f = r.fields;\n    const price = f['Price'] != null ? '$' + Number(f['Price']).toFixed(2) : 'price varies';\n    const desc = f['Description'] ? ' - ' + f['Description'] : '';\n    return f['Item Name'] + ' (' + price + ')' + desc;\n  });\n\nreturn [{ json: { results: [{ toolCallId, result: lines.join('\\n') }] } }];"
       }
     },
     {
@@ -33,12 +38,41 @@
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [300, 0],
-      "parameters": { "respondWith": "firstIncomingItem", "options": {} }
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      }
     }
   ],
   "connections": {
-    "Webhook":     { "main": [[{ "node": "Lookup Menu", "type": "main", "index": 0 }]] },
-    "Lookup Menu": { "main": [[{ "node": "Respond",     "type": "main", "index": 0 }]] }
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Lookup Menu",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Menu": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
   }
 }
