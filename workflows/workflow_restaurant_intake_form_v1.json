@@ -1,0 +1,76 @@
+{
+  "name": "restaurant_intake_form_v1",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "restaurant-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-intake-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "restaurant-intake"
+    },
+    {
+      "parameters": {
+        "jsCode": "const PAT = 'AIRTABLE_PAT_REDACTED';\nconst BASE_ID = 'appP4FfGtulxFG1wq';\nconst TABLE_ID = 'tblbIbuVqSt0BnYZj';\n\nconst body = $input.first().json.body || $input.first().json;\n\n// honeypot: bots fill the hidden field\nif (body._hp) {\n  return [{ json: { ok: true } }];\n}\n\nconst required = ['restaurantName', 'ownerName', 'ownerEmail'];\nfor (const f of required) {\n  if (!body[f] || !String(body[f]).trim()) {\n    return [{ json: { ok: false, error: 'Missing required field: ' + f } }];\n  }\n}\n\nconst s = v => (v == null ? '' : String(v).trim());\nconst fields = {\n  'Restaurant Name': s(body.restaurantName),\n  'Submitted At': new Date().toISOString(),\n  'Status': 'New',\n  'Legal Business Name': s(body.legalName),\n  'EIN': s(body.ein),\n  'Owner Name': s(body.ownerName),\n  'Owner Phone': s(body.ownerPhone),\n  'Owner Email': s(body.ownerEmail),\n  'Website': s(body.website),\n  'Locations': s(body.locations),\n  'Phone Provider': s(body.phoneProvider),\n  'Has Portal Access': s(body.portalAccess),\n  'Forwarding Mode': s(body.forwardingMode),\n  'Online Ordering URL': s(body.orderingUrl),\n  'Menu Contact': s(body.menuContact),\n  'Prices Differ By Location': body.pricesDiffer === true || body.pricesDiffer === 'yes',\n  'Excluded Items': s(body.excludedItems),\n  'Assistant Name': s(body.assistantName),\n  'Greeting': s(body.greeting),\n  'Tone': s(body.tone),\n  'Languages': Array.isArray(body.languages) ? body.languages : [],\n  'Top FAQs': s(body.faqs),\n  'Dashboard Monitor': s(body.monitorName),\n  'Monitor Device': s(body.monitorDevice),\n  'Default Pickup Time': s(body.pickupTime),\n  'Rejection Reasons': s(body.rejectionReasons),\n  'Escalation Phone': s(body.escalationPhone),\n  'SMS Consent Approved': body.smsConsent === true || body.smsConsent === 'yes',\n  'Menu Review Acknowledged': body.menuAck === true || body.menuAck === 'yes',\n  'Notes': s(body.notes),\n};\n// drop empty optional selects so Airtable doesn't reject unknown ''\nfor (const k of ['Has Portal Access','Forwarding Mode','Tone','Monitor Device','Website','Online Ordering URL']) {\n  if (!fields[k]) delete fields[k];\n}\n\nconst res = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.airtable.com/v0/' + BASE_ID + '/' + TABLE_ID,\n  headers: { Authorization: 'Bearer ' + PAT, 'Content-Type': 'application/json' },\n  body: { records: [{ fields }], typecast: true },\n  json: true,\n});\n\nreturn [{ json: { ok: true, id: res.records[0].id } }];"
+      },
+      "id": "code-intake-1",
+      "name": "Save Submission",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      },
+      "id": "resp-intake-1",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Save Submission",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Submission": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

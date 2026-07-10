@@ -1,5 +1,7 @@
 # AI Restaurant Phone Ordering System
 
+> **Project status:** delivered and fully operational; paused at the client's request in July 2026 after Phase 1 completion and Phase 2 Week 1 (onboarding blueprint + intake form). All systems left running.
+
 A production voice-AI ordering platform: customers call the restaurant's regular phone number, an AI agent ("Bea") takes the full order in natural conversation — in **English, Arabic, or Spanish** — and the restaurant manages everything from a real-time dashboard.
 
 Built end-to-end for **Beyond Juicery + Eatery** (2 locations, Dearborn MI) under HKA Connections LLC.
@@ -24,6 +26,7 @@ Airtable (orders · live menu · locations · callbacks)
 ```
 
 - **Dashboard repo:** [beyond-juicery-dashboard](https://github.com/dudasolve/beyond-juicery-dashboard) (Next.js App Router, deployed on Vercel)
+- **Intake form repo:** [restaurant-intake-form](https://github.com/dudasolve/restaurant-intake-form) (Phase 2 — public onboarding form → n8n → dedicated Airtable pipeline)
 
 ## What the agent handles
 
